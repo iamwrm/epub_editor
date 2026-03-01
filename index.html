@@ -1,0 +1,2997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Single-File EPUB Creator</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css"
+    integrity="sha512-XMxqcAfuPHOh2Kz0Z3oDynUcLgyKP6B1NCKUTxyVbM02u1ZrygDcLddKw7KpN/SGmdw8raHbKgaIHP7+bEfGYw=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  />
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --surface: #ffffff;
+      --surface-2: #f2f4f8;
+      --text: #1c2430;
+      --text-soft: #5d6877;
+      --border: #dbe0e8;
+      --accent: #1f6feb;
+      --accent-soft: #e8f0ff;
+      --danger: #d64545;
+      --success: #1f8f4e;
+      --shadow: 0 10px 30px rgba(16, 24, 40, 0.08);
+      --radius: 12px;
+    }
+
+    body.theme-dark {
+      --bg: #14181f;
+      --surface: #1d232d;
+      --surface-2: #242d3a;
+      --text: #e8edf6;
+      --text-soft: #a7b2c3;
+      --border: #374355;
+      --accent: #7aa7ff;
+      --accent-soft: #22324f;
+      --danger: #f07979;
+      --success: #57bf7d;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: radial-gradient(circle at top left, #ffffff 0%, var(--bg) 32%, var(--bg) 100%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+      color: inherit;
+    }
+
+    .dependency-blocker {
+      position: fixed;
+      inset: 0;
+      z-index: 1100;
+      background: rgba(8, 12, 16, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .dependency-card {
+      width: min(760px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 270px minmax(0, 1fr);
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      backdrop-filter: blur(6px);
+      padding: 18px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      margin-bottom: 4px;
+    }
+
+    .sidebar-actions {
+      display: grid;
+      gap: 8px;
+    }
+
+    .sidebar-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .button {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: 120ms ease;
+      line-height: 1.2;
+    }
+
+    .button:hover {
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      transform: translateY(-1px);
+    }
+
+    .button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .button.ghost {
+      background: var(--surface-2);
+    }
+
+    .button.danger {
+      border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
+      color: var(--danger);
+    }
+
+    .validation-errors {
+      font-size: 0.83rem;
+      color: var(--danger);
+      background: color-mix(in srgb, var(--danger) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
+      border-radius: 10px;
+      padding: 8px 10px;
+      display: none;
+    }
+
+    .validation-errors.active {
+      display: block;
+    }
+
+    .section-label {
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+      margin-top: 6px;
+    }
+
+    .chapter-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 0;
+    }
+
+    .chapter-item {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 6px;
+      background: var(--surface);
+      cursor: pointer;
+    }
+
+    .chapter-item.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+    }
+
+    .chapter-item.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .drag-handle {
+      cursor: grab;
+      color: var(--text-soft);
+      user-select: none;
+    }
+
+    .chapter-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.9rem;
+    }
+
+    .icon-btn {
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      border-radius: 8px;
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-soft);
+    }
+
+    .icon-btn:hover {
+      color: var(--text);
+    }
+
+    .main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 24px;
+      gap: 12px;
+    }
+
+    .main-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .main-header h1 {
+      font-size: 1.25rem;
+      margin: 0;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .mode-toggle {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .mode-toggle button {
+      border: 0;
+      background: var(--surface);
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+
+    .mode-toggle button.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .workspace {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 14px;
+    }
+
+    .workspace.preview-off {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .editor-shell {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .editor-content {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #quillEditorWrap {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #quillEditor {
+      min-height: 0;
+      flex: 1;
+      font-size: 1rem;
+    }
+
+    #markdownEditor {
+      width: 100%;
+      min-height: 0;
+      flex: 1;
+      border: 0;
+      resize: none;
+      background: transparent;
+      color: var(--text);
+      padding: 24px;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      line-height: 1.55;
+      outline: none;
+    }
+
+    .ql-toolbar.ql-snow {
+      border: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+
+    .ql-container.ql-snow {
+      border: 0;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    .ql-editor {
+      min-height: 420px;
+      max-width: 740px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 26px 28px 32px;
+      line-height: 1.65;
+    }
+
+    .preview-pane {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .preview-head {
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+      padding: 10px 12px;
+      font-size: 0.85rem;
+      color: var(--text-soft);
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .preview-content {
+      overflow: auto;
+      padding: 20px;
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.65;
+    }
+
+    .preview-content img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .status-bar {
+      font-size: 0.84rem;
+      color: var(--text-soft);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+    }
+
+    .modal.open {
+      display: block;
+    }
+
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(5, 8, 12, 0.58);
+    }
+
+    .modal-dialog {
+      position: relative;
+      width: min(760px, calc(100% - 24px));
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      margin: 16px auto;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .modal-title {
+      margin: 0;
+      font-size: 1.08rem;
+    }
+
+    .metadata-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .metadata-grid .full {
+      grid-column: 1 / -1;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 0.86rem;
+      color: var(--text-soft);
+    }
+
+    .field input,
+    .field textarea,
+    .field select {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      padding: 9px 10px;
+      width: 100%;
+    }
+
+    .field textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+
+    .cover-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .cover-name {
+      font-size: 0.84rem;
+      color: var(--text-soft);
+    }
+
+    .toast-stack {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 1200;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: 10px;
+      padding: 9px 11px;
+      font-size: 0.84rem;
+      pointer-events: auto;
+    }
+
+    .toast.success {
+      border-color: color-mix(in srgb, var(--success) 50%, var(--border));
+    }
+
+    .toast.error {
+      border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+      color: var(--danger);
+    }
+
+    .muted {
+      color: var(--text-soft);
+    }
+
+    @media (max-width: 1140px) {
+      .workspace {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .preview-pane {
+        display: none;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .chapter-list {
+        max-height: 240px;
+      }
+
+      .main {
+        min-height: calc(100vh - 280px);
+      }
+
+      .metadata-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="dependencyBlocker" class="dependency-blocker hidden">
+    <div class="dependency-card">
+      <h2>Dependency load failed</h2>
+      <p class="muted" id="dependencyMessage"></p>
+      <p class="muted">
+        This file can run offline after first successful load, but dependencies must be cached once.
+      </p>
+    </div>
+  </div>
+
+  <div id="app" class="app">
+    <aside class="sidebar">
+      <div class="brand">EPUB Creator</div>
+
+      <div class="sidebar-actions">
+        <button class="button" id="metadataBtn" type="button">Book Metadata</button>
+        <button class="button" id="addChapterBtn" type="button">Add Chapter</button>
+        <button class="button danger" id="newProjectBtn" type="button">New Project</button>
+        <button class="button primary" id="exportEpubBtn" type="button">Download EPUB</button>
+
+        <div class="sidebar-row">
+          <button class="button ghost" id="exportProjectBtn" type="button">Export JSON</button>
+          <button class="button ghost" id="importProjectBtn" type="button">Import JSON</button>
+        </div>
+
+        <div class="sidebar-row">
+          <button class="button ghost" id="importEpubBtn" type="button">Import EPUB</button>
+          <button class="button ghost" id="forceSaveBtn" type="button">Save Now</button>
+        </div>
+      </div>
+
+      <div id="validationErrors" class="validation-errors" aria-live="polite"></div>
+
+      <div class="section-label">Chapters</div>
+      <ul id="chapterList" class="chapter-list" aria-label="Chapter list"></ul>
+
+      <input id="projectImportInput" type="file" accept=".json,application/json" class="hidden" />
+      <input id="epubImportInput" type="file" accept=".epub,application/epub+zip" class="hidden" />
+      <input id="toolbarImageInput" type="file" accept="image/*" class="hidden" />
+    </aside>
+
+    <main class="main">
+      <header class="main-header">
+        <h1 id="currentChapterTitle">Chapter</h1>
+        <div class="header-actions">
+          <div class="mode-toggle">
+            <button id="modeRichtextBtn" type="button">Rich Text</button>
+            <button id="modeMarkdownBtn" type="button">Markdown</button>
+          </div>
+          <button class="button ghost" id="previewToggleBtn" type="button">Toggle Preview</button>
+          <button class="button ghost" id="themeToggleBtn" type="button">Dark Mode</button>
+        </div>
+      </header>
+
+      <div id="workspace" class="workspace preview-off">
+        <section class="editor-shell">
+          <div class="editor-content">
+            <div id="quillEditorWrap">
+              <div id="quillToolbar">
+                <span class="ql-formats">
+                  <select class="ql-header">
+                    <option selected></option>
+                    <option value="1"></option>
+                    <option value="2"></option>
+                    <option value="3"></option>
+                  </select>
+                </span>
+                <span class="ql-formats">
+                  <button class="ql-bold"></button>
+                  <button class="ql-italic"></button>
+                  <button class="ql-underline"></button>
+                  <button class="ql-strike"></button>
+                </span>
+                <span class="ql-formats">
+                  <button class="ql-list" value="ordered"></button>
+                  <button class="ql-list" value="bullet"></button>
+                  <button class="ql-blockquote"></button>
+                  <button class="ql-code-block"></button>
+                </span>
+                <span class="ql-formats">
+                  <button class="ql-link"></button>
+                  <button class="ql-image"></button>
+                </span>
+                <span class="ql-formats">
+                  <button class="ql-clean"></button>
+                </span>
+              </div>
+              <div id="quillEditor" aria-label="Rich text editor"></div>
+            </div>
+            <textarea id="markdownEditor" class="hidden" aria-label="Markdown editor"></textarea>
+          </div>
+        </section>
+
+        <aside id="previewPane" class="preview-pane hidden" aria-live="polite">
+          <div class="preview-head">Live Preview</div>
+          <article id="previewContent" class="preview-content"></article>
+        </aside>
+      </div>
+
+      <div class="status-bar">
+        <span id="wordCount">Words: 0</span>
+        <span id="autosaveStatus">Ready</span>
+      </div>
+    </main>
+  </div>
+
+  <div id="metadataModal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal="true"></div>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="metadataTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="metadataTitle">Book Metadata</h2>
+        <button type="button" class="icon-btn" id="closeMetadataBtn" aria-label="Close metadata panel">x</button>
+      </div>
+
+      <div class="metadata-grid">
+        <div class="field">
+          <label for="metaTitle">Title *</label>
+          <input id="metaTitle" name="title" type="text" required />
+        </div>
+        <div class="field">
+          <label for="metaAuthor">Author *</label>
+          <input id="metaAuthor" name="author" type="text" required />
+        </div>
+        <div class="field">
+          <label for="metaLanguage">Language</label>
+          <input id="metaLanguage" name="language" type="text" placeholder="en" />
+        </div>
+        <div class="field">
+          <label for="metaDate">Date</label>
+          <input id="metaDate" name="date" type="date" />
+        </div>
+        <div class="field full">
+          <label for="metaDescription">Description</label>
+          <textarea id="metaDescription" name="description"></textarea>
+        </div>
+        <div class="field">
+          <label for="metaPublisher">Publisher</label>
+          <input id="metaPublisher" name="publisher" type="text" />
+        </div>
+        <div class="field">
+          <label for="metaRights">Rights / License</label>
+          <input id="metaRights" name="rights" type="text" />
+        </div>
+        <div class="field full">
+          <label>Cover Image</label>
+          <div class="cover-row">
+            <button class="button ghost" id="coverUploadBtn" type="button">Upload Cover</button>
+            <button class="button ghost" id="coverRemoveBtn" type="button">Remove Cover</button>
+            <span id="coverName" class="cover-name muted">No cover selected</span>
+          </div>
+          <input id="coverFileInput" type="file" accept="image/*" class="hidden" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
+    integrity="sha512-XMVd28F1oH/O71fzwBnV7HucLxVwtxf26XV8P4wPk26EDxuGZ91N8bsOttmnomcCD3CS5ZMRL50H0GgOHvegtg=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  ></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"
+    integrity="sha512-Qlv6VSKh1gDKGoJbnyA5RMXYcvnpIqhO++MhIM2fStMcGT9i2T//tSwYFlcyoRRDcDZ+TYHpH8azBBCyhpSeqw=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  ></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/lib/marked.umd.min.js"
+    integrity="sha512-V6rGY7jjOEUc7q5Ews8mMlretz1Vn2wLdMW/qgABLWunzsLfluM0FwHuGjGQ1lc8jO5vGpGIGFE+rTzB+63HdA=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  ></script>
+  <script
+    src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"
+    integrity="sha512-P2W2rr8ikUPfa31PLBo5bcBQrsa+TNj8jiKadtaIrHQGMo6hQM6RdPjQYxlNguwHz8AwSQ28VkBK6kHBLgd/8g=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  ></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const STORAGE_KEY = "epubCreatorProjectV1";
+      const BACKUP_NAME_KEY = "epubCreatorLastBackupName";
+      const THEME_KEY = "epubCreatorTheme";
+      const PROJECT_VERSION = "1.0.0";
+      const MAX_WARN_BYTES = 50 * 1024 * 1024;
+
+      const EPUB_STYLE_CSS = `body {
+  font-family: Georgia, "Times New Roman", serif;
+  margin: 1em;
+  line-height: 1.6;
+}
+h1, h2, h3 { margin-top: 1.5em; }
+img { max-width: 100%; height: auto; }
+blockquote { margin-left: 1.5em; font-style: italic; }
+code, pre { font-family: monospace; font-size: 0.9em; }`;
+
+      const CONTAINER_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`;
+
+      const ALLOWED_TAGS = new Set([
+        "p",
+        "div",
+        "span",
+        "br",
+        "hr",
+        "strong",
+        "b",
+        "em",
+        "i",
+        "u",
+        "s",
+        "h1",
+        "h2",
+        "h3",
+        "ol",
+        "ul",
+        "li",
+        "blockquote",
+        "a",
+        "img",
+        "pre",
+        "code"
+      ]);
+
+      const DISALLOWED_TAGS = new Set([
+        "script",
+        "style",
+        "iframe",
+        "object",
+        "embed",
+        "svg",
+        "canvas",
+        "form",
+        "input",
+        "button",
+        "textarea",
+        "select",
+        "link",
+        "meta"
+      ]);
+
+      let project = createDefaultProject();
+      let currentChapterId = project.chapters[0].id;
+      let quill = null;
+      let isHydrating = false;
+      let autosaveTimer = null;
+      let previewEnabled = false;
+      let draggingChapterId = null;
+      let lastSaveTimestamp = null;
+      let isModeSwitching = false;
+
+      const elements = {};
+
+      document.addEventListener("DOMContentLoaded", initialize);
+
+      function initialize() {
+        cacheElements();
+        if (!checkDependencies()) {
+          return;
+        }
+
+        applyStoredTheme();
+        initMarked();
+        initQuill();
+        bindUiEvents();
+        loadInitialProject();
+        renderAll();
+        updateAutosaveStatus("Ready");
+      }
+
+      function cacheElements() {
+        elements.app = document.getElementById("app");
+        elements.dependencyBlocker = document.getElementById("dependencyBlocker");
+        elements.dependencyMessage = document.getElementById("dependencyMessage");
+        elements.metadataBtn = document.getElementById("metadataBtn");
+        elements.addChapterBtn = document.getElementById("addChapterBtn");
+        elements.newProjectBtn = document.getElementById("newProjectBtn");
+        elements.exportEpubBtn = document.getElementById("exportEpubBtn");
+        elements.exportProjectBtn = document.getElementById("exportProjectBtn");
+        elements.importProjectBtn = document.getElementById("importProjectBtn");
+        elements.importEpubBtn = document.getElementById("importEpubBtn");
+        elements.projectImportInput = document.getElementById("projectImportInput");
+        elements.epubImportInput = document.getElementById("epubImportInput");
+        elements.toolbarImageInput = document.getElementById("toolbarImageInput");
+        elements.chapterList = document.getElementById("chapterList");
+        elements.validationErrors = document.getElementById("validationErrors");
+        elements.currentChapterTitle = document.getElementById("currentChapterTitle");
+        elements.modeRichtextBtn = document.getElementById("modeRichtextBtn");
+        elements.modeMarkdownBtn = document.getElementById("modeMarkdownBtn");
+        elements.previewToggleBtn = document.getElementById("previewToggleBtn");
+        elements.themeToggleBtn = document.getElementById("themeToggleBtn");
+        elements.workspace = document.getElementById("workspace");
+        elements.previewPane = document.getElementById("previewPane");
+        elements.previewContent = document.getElementById("previewContent");
+        elements.quillEditorWrap = document.getElementById("quillEditorWrap");
+        elements.markdownEditor = document.getElementById("markdownEditor");
+        elements.wordCount = document.getElementById("wordCount");
+        elements.autosaveStatus = document.getElementById("autosaveStatus");
+        elements.forceSaveBtn = document.getElementById("forceSaveBtn");
+        elements.metadataModal = document.getElementById("metadataModal");
+        elements.closeMetadataBtn = document.getElementById("closeMetadataBtn");
+        elements.metaTitle = document.getElementById("metaTitle");
+        elements.metaAuthor = document.getElementById("metaAuthor");
+        elements.metaLanguage = document.getElementById("metaLanguage");
+        elements.metaDate = document.getElementById("metaDate");
+        elements.metaDescription = document.getElementById("metaDescription");
+        elements.metaPublisher = document.getElementById("metaPublisher");
+        elements.metaRights = document.getElementById("metaRights");
+        elements.coverUploadBtn = document.getElementById("coverUploadBtn");
+        elements.coverRemoveBtn = document.getElementById("coverRemoveBtn");
+        elements.coverFileInput = document.getElementById("coverFileInput");
+        elements.coverName = document.getElementById("coverName");
+        elements.toastStack = document.getElementById("toastStack");
+      }
+
+      function checkDependencies() {
+        const missing = [];
+        if (typeof window.JSZip === "undefined") missing.push("JSZip");
+        if (typeof window.saveAs === "undefined") missing.push("FileSaver.js");
+        if (typeof window.Quill === "undefined") missing.push("Quill");
+        if (typeof window.marked === "undefined") missing.push("marked");
+        if (missing.length === 0) return true;
+
+        elements.dependencyMessage.textContent =
+          "Missing dependencies: " +
+          missing.join(", ") +
+          ". Connect once to load from CDN and cache them locally.";
+        elements.dependencyBlocker.classList.remove("hidden");
+        elements.app.classList.add("hidden");
+        return false;
+      }
+
+      function initMarked() {
+        window.marked.setOptions({
+          gfm: true,
+          breaks: true
+        });
+      }
+
+      function initQuill() {
+        quill = new window.Quill("#quillEditor", {
+          theme: "snow",
+          modules: {
+            toolbar: {
+              container: "#quillToolbar",
+              handlers: {
+                image: () => {
+                  elements.toolbarImageInput.click();
+                }
+              }
+            }
+          }
+        });
+
+        quill.on("text-change", () => {
+          if (isHydrating) return;
+          const chapter = getCurrentChapter();
+          if (!chapter || chapter.editorMode !== "richtext") return;
+          chapter.contentHtml = quill.root.innerHTML;
+          onProjectMutated();
+        });
+
+        quill.root.addEventListener("dragover", (event) => {
+          event.preventDefault();
+        });
+
+        quill.root.addEventListener("drop", async (event) => {
+          event.preventDefault();
+          const chapter = getCurrentChapter();
+          if (!chapter || chapter.editorMode !== "richtext") return;
+          const files = Array.from(event.dataTransfer.files || []).filter(isImageFile);
+          if (!files.length) return;
+          for (const file of files) {
+            await insertImageIntoCurrentEditor(file);
+          }
+          onProjectMutated();
+        });
+      }
+
+      function bindUiEvents() {
+        elements.metadataBtn.addEventListener("click", openMetadataModal);
+        elements.addChapterBtn.addEventListener("click", addChapter);
+        elements.newProjectBtn.addEventListener("click", createNewProject);
+        elements.exportEpubBtn.addEventListener("click", exportEpub);
+        elements.exportProjectBtn.addEventListener("click", exportProjectJson);
+        elements.importProjectBtn.addEventListener("click", () => elements.projectImportInput.click());
+        elements.importEpubBtn.addEventListener("click", () => elements.epubImportInput.click());
+        elements.forceSaveBtn.addEventListener("click", forceSaveNow);
+
+        elements.projectImportInput.addEventListener("change", importProjectJson);
+        elements.epubImportInput.addEventListener("change", importEpub);
+        elements.toolbarImageInput.addEventListener("change", onToolbarImagePicked);
+
+        elements.modeRichtextBtn.addEventListener("click", () => setChapterMode("richtext"));
+        elements.modeMarkdownBtn.addEventListener("click", () => setChapterMode("markdown"));
+        elements.previewToggleBtn.addEventListener("click", togglePreview);
+        elements.themeToggleBtn.addEventListener("click", toggleTheme);
+
+        elements.markdownEditor.addEventListener("input", () => {
+          const chapter = getCurrentChapter();
+          if (!chapter || chapter.editorMode !== "markdown") return;
+          chapter.contentMarkdown = elements.markdownEditor.value;
+          onProjectMutated();
+        });
+
+        elements.markdownEditor.addEventListener("dragover", (event) => {
+          event.preventDefault();
+        });
+
+        elements.markdownEditor.addEventListener("drop", async (event) => {
+          event.preventDefault();
+          const chapter = getCurrentChapter();
+          if (!chapter || chapter.editorMode !== "markdown") return;
+          const files = Array.from(event.dataTransfer.files || []).filter(isImageFile);
+          if (!files.length) return;
+          for (const file of files) {
+            await insertImageIntoCurrentEditor(file);
+          }
+          onProjectMutated();
+        });
+
+        elements.closeMetadataBtn.addEventListener("click", closeMetadataModal);
+        elements.metadataModal.addEventListener("click", (event) => {
+          if (event.target && event.target.getAttribute("data-close-modal") === "true") {
+            closeMetadataModal();
+          }
+        });
+
+        const metadataInputs = [
+          elements.metaTitle,
+          elements.metaAuthor,
+          elements.metaLanguage,
+          elements.metaDate,
+          elements.metaDescription,
+          elements.metaPublisher,
+          elements.metaRights
+        ];
+
+        metadataInputs.forEach((input) => {
+          input.addEventListener("input", () => {
+            project.metadata[input.name] = input.value;
+            onProjectMutated();
+          });
+        });
+
+        elements.coverUploadBtn.addEventListener("click", () => elements.coverFileInput.click());
+        elements.coverRemoveBtn.addEventListener("click", removeCoverImage);
+        elements.coverFileInput.addEventListener("change", onCoverImagePicked);
+
+        elements.chapterList.addEventListener("dragover", (event) => event.preventDefault());
+
+        window.addEventListener("keydown", handleKeyboardShortcuts);
+        window.addEventListener("beforeunload", () => {
+          persistCurrentChapterContent();
+          saveProjectToStorage();
+        });
+      }
+
+      function handleKeyboardShortcuts(event) {
+        const modifier = event.ctrlKey || event.metaKey;
+        if (!modifier) return;
+
+        const key = event.key.toLowerCase();
+        if (key === "s") {
+          event.preventDefault();
+          forceSaveNow();
+        } else if (key === "e") {
+          event.preventDefault();
+          exportEpub();
+        } else if (key === "n") {
+          event.preventDefault();
+          addChapter();
+        }
+      }
+
+      function loadInitialProject() {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          return;
+        }
+        const shouldRestore = window.confirm("Restore previous project from local storage?");
+        if (!shouldRestore) {
+          localStorage.removeItem(STORAGE_KEY);
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(raw);
+          project = normalizeProject(parsed);
+          currentChapterId = project.chapters[0].id;
+          showToast("Previous project restored.", "success");
+        } catch (error) {
+          console.error(error);
+          localStorage.removeItem(STORAGE_KEY);
+          showToast("Could not restore saved project.", "error");
+        }
+      }
+
+      function createDefaultProject() {
+        return {
+          version: PROJECT_VERSION,
+          uuid: generateUuid(),
+          metadata: {
+            title: "",
+            author: "",
+            language: "en",
+            description: "",
+            publisher: "",
+            date: "",
+            rights: "",
+            coverImage: null
+          },
+          chapters: [
+            {
+              id: "chapter-001",
+              title: "Chapter 1",
+              contentHtml: "",
+              contentMarkdown: "",
+              editorMode: "richtext",
+              order: 0
+            }
+          ],
+          images: []
+        };
+      }
+
+      function normalizeProject(raw) {
+        const fallback = createDefaultProject();
+        if (!raw || typeof raw !== "object") return fallback;
+
+        const normalized = {
+          version: typeof raw.version === "string" ? raw.version : PROJECT_VERSION,
+          uuid: typeof raw.uuid === "string" && raw.uuid ? raw.uuid : generateUuid(),
+          metadata: {
+            title: stringOrEmpty(raw.metadata && raw.metadata.title),
+            author: stringOrEmpty(raw.metadata && raw.metadata.author),
+            language: stringOrDefault(raw.metadata && raw.metadata.language, "en"),
+            description: stringOrEmpty(raw.metadata && raw.metadata.description),
+            publisher: stringOrEmpty(raw.metadata && raw.metadata.publisher),
+            date: stringOrEmpty(raw.metadata && raw.metadata.date),
+            rights: stringOrEmpty(raw.metadata && raw.metadata.rights),
+            coverImage: normalizeCover(raw.metadata && raw.metadata.coverImage)
+          },
+          chapters: Array.isArray(raw.chapters)
+            ? raw.chapters.map((chapter, index) => normalizeChapter(chapter, index))
+            : [],
+          images: Array.isArray(raw.images) ? raw.images.map((image) => normalizeImage(image)).filter(Boolean) : []
+        };
+
+        normalized.chapters = normalized.chapters.filter(Boolean);
+        if (!normalized.chapters.length) {
+          normalized.chapters = fallback.chapters;
+        }
+
+        normalized.chapters.sort((a, b) => a.order - b.order);
+        normalized.chapters.forEach((chapter, index) => {
+          chapter.order = index;
+          if (!chapter.id) chapter.id = `chapter-${String(index + 1).padStart(3, "0")}`;
+        });
+
+        return normalized;
+      }
+
+      function normalizeChapter(chapter, index) {
+        if (!chapter || typeof chapter !== "object") return null;
+        return {
+          id: typeof chapter.id === "string" && chapter.id ? chapter.id : "",
+          title: stringOrDefault(chapter.title, `Chapter ${index + 1}`),
+          contentHtml: stringOrEmpty(chapter.contentHtml),
+          contentMarkdown: stringOrEmpty(chapter.contentMarkdown),
+          editorMode: chapter.editorMode === "markdown" ? "markdown" : "richtext",
+          order: Number.isFinite(chapter.order) ? chapter.order : index
+        };
+      }
+
+      function normalizeImage(image) {
+        if (!image || typeof image !== "object") return null;
+        const mimeType = stringOrEmpty(image.mimeType);
+        const base64 = stringOrEmpty(image.base64);
+        if (!mimeType || !base64) return null;
+        return {
+          id: stringOrDefault(image.id, `image-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+          filename: sanitizeFilename(stringOrDefault(image.filename, "image.bin")),
+          mimeType,
+          base64,
+          hash: stringOrEmpty(image.hash)
+        };
+      }
+
+      function normalizeCover(cover) {
+        if (!cover || typeof cover !== "object") return null;
+        if (!cover.mimeType || !cover.base64) return null;
+        return {
+          filename: sanitizeFilename(stringOrDefault(cover.filename, "cover." + extensionFromMime(cover.mimeType))),
+          mimeType: cover.mimeType,
+          base64: cover.base64
+        };
+      }
+
+      function renderAll() {
+        if (!getCurrentChapter()) {
+          currentChapterId = project.chapters[0].id;
+        }
+        renderMetadataInputs();
+        renderChapterList();
+        renderCurrentChapter();
+        renderModeButtons();
+        renderPreviewState();
+        renderCoverLabel();
+        updateWordCount();
+      }
+
+      function renderMetadataInputs() {
+        elements.metaTitle.value = project.metadata.title;
+        elements.metaAuthor.value = project.metadata.author;
+        elements.metaLanguage.value = project.metadata.language || "en";
+        elements.metaDescription.value = project.metadata.description;
+        elements.metaPublisher.value = project.metadata.publisher;
+        elements.metaDate.value = project.metadata.date;
+        elements.metaRights.value = project.metadata.rights;
+      }
+
+      function renderCoverLabel() {
+        if (!project.metadata.coverImage) {
+          elements.coverName.textContent = "No cover selected";
+          return;
+        }
+        elements.coverName.textContent = project.metadata.coverImage.filename;
+      }
+
+      function renderChapterList() {
+        elements.chapterList.innerHTML = "";
+        const chapters = getOrderedChapters();
+
+        chapters.forEach((chapter) => {
+          const item = document.createElement("li");
+          item.className = "chapter-item" + (chapter.id === currentChapterId ? " active" : "");
+          item.draggable = true;
+          item.dataset.chapterId = chapter.id;
+
+          const handle = document.createElement("span");
+          handle.className = "drag-handle";
+          handle.textContent = "::";
+          handle.title = "Drag to reorder";
+
+          const title = document.createElement("span");
+          title.className = "chapter-title";
+          title.textContent = chapter.title;
+          title.title = chapter.title;
+
+          const editBtn = document.createElement("button");
+          editBtn.type = "button";
+          editBtn.className = "icon-btn";
+          editBtn.textContent = "E";
+          editBtn.title = "Rename chapter";
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.type = "button";
+          deleteBtn.className = "icon-btn";
+          deleteBtn.textContent = "X";
+          deleteBtn.title = "Delete chapter";
+
+          item.append(handle, title, editBtn, deleteBtn);
+          elements.chapterList.appendChild(item);
+
+          item.addEventListener("click", (event) => {
+            if (event.target === editBtn || event.target === deleteBtn) return;
+            selectChapter(chapter.id);
+          });
+
+          editBtn.addEventListener("click", (event) => {
+            event.stopPropagation();
+            startChapterRename(item, chapter.id);
+          });
+
+          title.addEventListener("dblclick", (event) => {
+            event.stopPropagation();
+            startChapterRename(item, chapter.id);
+          });
+
+          deleteBtn.addEventListener("click", (event) => {
+            event.stopPropagation();
+            deleteChapter(chapter.id);
+          });
+
+          item.addEventListener("dragstart", () => {
+            draggingChapterId = chapter.id;
+          });
+
+          item.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            item.classList.add("drag-over");
+          });
+
+          item.addEventListener("dragleave", () => {
+            item.classList.remove("drag-over");
+          });
+
+          item.addEventListener("drop", (event) => {
+            event.preventDefault();
+            item.classList.remove("drag-over");
+            if (!draggingChapterId || draggingChapterId === chapter.id) return;
+            reorderChapters(draggingChapterId, chapter.id);
+          });
+        });
+      }
+
+      function startChapterRename(item, chapterId) {
+        const chapter = project.chapters.find((entry) => entry.id === chapterId);
+        if (!chapter) return;
+
+        const titleNode = item.querySelector(".chapter-title");
+        if (!titleNode) return;
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = chapter.title;
+        input.className = "chapter-title";
+        input.style.border = "1px solid var(--border)";
+        input.style.borderRadius = "8px";
+        input.style.padding = "4px 6px";
+        titleNode.replaceWith(input);
+        input.focus();
+        input.select();
+
+        const commit = () => {
+          const nextValue = input.value.trim();
+          chapter.title = nextValue || chapter.title;
+          onProjectMutated();
+          renderChapterList();
+          if (chapter.id === currentChapterId) {
+            elements.currentChapterTitle.textContent = chapter.title;
+            renderPreview();
+          }
+        };
+
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          } else if (event.key === "Escape") {
+            renderChapterList();
+          }
+        });
+        input.addEventListener("blur", commit);
+      }
+
+      function reorderChapters(sourceId, targetId) {
+        const ordered = getOrderedChapters();
+        const sourceIndex = ordered.findIndex((entry) => entry.id === sourceId);
+        const targetIndex = ordered.findIndex((entry) => entry.id === targetId);
+        if (sourceIndex < 0 || targetIndex < 0) return;
+
+        const [moved] = ordered.splice(sourceIndex, 1);
+        ordered.splice(targetIndex, 0, moved);
+        ordered.forEach((chapter, index) => {
+          chapter.order = index;
+        });
+
+        onProjectMutated();
+        renderChapterList();
+      }
+
+      function getOrderedChapters() {
+        return [...project.chapters].sort((a, b) => a.order - b.order);
+      }
+
+      function getCurrentChapter() {
+        return project.chapters.find((entry) => entry.id === currentChapterId) || null;
+      }
+
+      function selectChapter(chapterId) {
+        if (chapterId === currentChapterId) return;
+        persistCurrentChapterContent();
+        currentChapterId = chapterId;
+        renderChapterList();
+        renderCurrentChapter();
+        renderModeButtons();
+        renderPreview();
+        updateWordCount();
+      }
+
+      function renderCurrentChapter() {
+        const chapter = getCurrentChapter();
+        if (!chapter) return;
+
+        elements.currentChapterTitle.textContent = chapter.title;
+
+        if (chapter.editorMode === "richtext") {
+          elements.quillEditorWrap.classList.remove("hidden");
+          elements.markdownEditor.classList.add("hidden");
+          isHydrating = true;
+          quill.root.innerHTML = chapter.contentHtml || "<p><br></p>";
+          isHydrating = false;
+        } else {
+          elements.quillEditorWrap.classList.add("hidden");
+          elements.markdownEditor.classList.remove("hidden");
+          elements.markdownEditor.value = chapter.contentMarkdown || "";
+        }
+      }
+
+      function renderModeButtons() {
+        const chapter = getCurrentChapter();
+        const isMarkdown = chapter && chapter.editorMode === "markdown";
+        elements.modeRichtextBtn.classList.toggle("active", !isMarkdown);
+        elements.modeMarkdownBtn.classList.toggle("active", isMarkdown);
+      }
+
+      async function setChapterMode(nextMode) {
+        const chapter = getCurrentChapter();
+        if (!chapter || chapter.editorMode === nextMode || isModeSwitching) return;
+        isModeSwitching = true;
+        try {
+          persistCurrentChapterContent();
+          await syncChapterContentForMode(chapter, nextMode);
+          chapter.editorMode = nextMode;
+          onProjectMutated();
+          renderCurrentChapter();
+          renderModeButtons();
+          renderPreview();
+          updateWordCount();
+        } catch (error) {
+          console.error(error);
+          showToast("Could not switch editor mode.", "error");
+        } finally {
+          isModeSwitching = false;
+        }
+      }
+
+      function persistCurrentChapterContent() {
+        const chapter = getCurrentChapter();
+        if (!chapter) return;
+        if (chapter.editorMode === "richtext") {
+          chapter.contentHtml = quill.root.innerHTML;
+        } else {
+          chapter.contentMarkdown = elements.markdownEditor.value;
+        }
+      }
+
+      async function syncChapterContentForMode(chapter, nextMode) {
+        if (!chapter) return;
+        if (nextMode === "markdown") {
+          const safeHtml = sanitizeHtml(chapter.contentHtml || "");
+          chapter.contentHtml = safeHtml;
+          const markdown = convertHtmlToMarkdown(safeHtml);
+          chapter.contentMarkdown = await normalizeMarkdownImageSources(markdown);
+        } else {
+          const markdown = await normalizeMarkdownImageSources(chapter.contentMarkdown || "");
+          chapter.contentMarkdown = markdown;
+          const rendered = window.marked.parse(markdown);
+          const sanitized = sanitizeHtml(rendered);
+          chapter.contentHtml = hydrateHtmlImageRefsForDisplay(sanitized);
+        }
+      }
+
+      function addChapter() {
+        persistCurrentChapterContent();
+        const nextNumber = getNextChapterNumber();
+        const newChapter = {
+          id: `chapter-${String(nextNumber).padStart(3, "0")}`,
+          title: `Chapter ${project.chapters.length + 1}`,
+          contentHtml: "",
+          contentMarkdown: "",
+          editorMode: "richtext",
+          order: project.chapters.length
+        };
+        project.chapters.push(newChapter);
+        currentChapterId = newChapter.id;
+        onProjectMutated();
+        renderAll();
+      }
+
+      function getNextChapterNumber() {
+        let max = 0;
+        project.chapters.forEach((chapter) => {
+          const match = /chapter-(\d+)/i.exec(chapter.id || "");
+          if (match) {
+            max = Math.max(max, Number(match[1]));
+          }
+        });
+        return max + 1;
+      }
+
+      function deleteChapter(chapterId) {
+        const chapter = project.chapters.find((entry) => entry.id === chapterId);
+        if (!chapter) return;
+        const shouldDelete = window.confirm(`Delete "${chapter.title}"?`);
+        if (!shouldDelete) return;
+
+        project.chapters = project.chapters.filter((entry) => entry.id !== chapterId);
+        if (!project.chapters.length) {
+          project.chapters = createDefaultProject().chapters;
+        }
+        project.chapters.forEach((entry, index) => {
+          entry.order = index;
+        });
+        if (!project.chapters.some((entry) => entry.id === currentChapterId)) {
+          currentChapterId = project.chapters[0].id;
+        }
+        onProjectMutated();
+        renderAll();
+      }
+
+      function onProjectMutated() {
+        updateAutosaveStatus("Unsaved changes...");
+        scheduleAutosave();
+        updateWordCount();
+        renderPreview();
+      }
+
+      function scheduleAutosave() {
+        if (autosaveTimer) clearTimeout(autosaveTimer);
+        autosaveTimer = setTimeout(() => {
+          saveProjectToStorage();
+        }, 2000);
+      }
+
+      function saveProjectToStorage() {
+        persistCurrentChapterContent();
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+          lastSaveTimestamp = new Date();
+          updateAutosaveStatus("Saved " + lastSaveTimestamp.toLocaleTimeString());
+        } catch (error) {
+          console.error(error);
+          updateAutosaveStatus("Save failed");
+          showToast("Local save failed (storage full or blocked).", "error");
+        }
+      }
+
+      async function forceSaveNow() {
+        if (autosaveTimer) clearTimeout(autosaveTimer);
+        try {
+          await normalizeCurrentMarkdownForExplicitAction();
+          saveProjectToStorage();
+          showToast("Project saved.", "success");
+        } catch (error) {
+          console.error(error);
+          showToast("Project save failed.", "error");
+        }
+      }
+
+      async function normalizeCurrentMarkdownForExplicitAction() {
+        const chapter = getCurrentChapter();
+        if (!chapter || chapter.editorMode !== "markdown") return;
+
+        const editorVisible = !elements.markdownEditor.classList.contains("hidden");
+        const source = editorVisible ? elements.markdownEditor.value : chapter.contentMarkdown || "";
+        const normalized = await normalizeMarkdownImageSources(source);
+        chapter.contentMarkdown = normalized;
+
+        if (editorVisible && elements.markdownEditor.value !== normalized) {
+          elements.markdownEditor.value = normalized;
+        }
+
+        updateWordCount();
+        renderPreview();
+      }
+
+      function updateAutosaveStatus(text) {
+        elements.autosaveStatus.textContent = text;
+      }
+
+      function updateWordCount() {
+        const chapter = getCurrentChapter();
+        const chapterWords = countWordsFromChapter(chapter);
+        const totalWords = getOrderedChapters().reduce((sum, entry) => sum + countWordsFromChapter(entry), 0);
+        elements.wordCount.textContent = `Words: ${chapterWords} (chapter) / ${totalWords} (total)`;
+      }
+
+      function countWordsFromChapter(chapter) {
+        if (!chapter) return 0;
+        let text = "";
+        if (chapter.editorMode === "markdown") {
+          text = chapter.contentMarkdown || "";
+        } else {
+          text = extractTextFromHtml(chapter.contentHtml || "");
+        }
+        const words = text.trim().match(/\S+/g);
+        return words ? words.length : 0;
+      }
+
+      function extractTextFromHtml(html) {
+        const doc = new DOMParser().parseFromString(`<div>${html || ""}</div>`, "text/html");
+        return (doc.body.textContent || "").replace(/\s+/g, " ").trim();
+      }
+
+      function togglePreview() {
+        previewEnabled = !previewEnabled;
+        renderPreviewState();
+        renderPreview();
+      }
+
+      function renderPreviewState() {
+        elements.previewPane.classList.toggle("hidden", !previewEnabled);
+        elements.workspace.classList.toggle("preview-off", !previewEnabled);
+      }
+
+      function renderPreview() {
+        if (!previewEnabled) return;
+        const chapter = getCurrentChapter();
+        if (!chapter) {
+          elements.previewContent.innerHTML = "";
+          return;
+        }
+
+        let html = "";
+        if (chapter.editorMode === "markdown") {
+          html = window.marked.parse(chapter.contentMarkdown || "");
+        } else {
+          html = chapter.contentHtml || "";
+        }
+        html = sanitizeHtml(html);
+        html = hydrateHtmlImageRefsForDisplay(html);
+        elements.previewContent.innerHTML = html || '<p class="muted">No content yet.</p>';
+      }
+
+      function openMetadataModal() {
+        renderMetadataInputs();
+        renderCoverLabel();
+        elements.metadataModal.classList.add("open");
+        elements.metadataModal.setAttribute("aria-hidden", "false");
+      }
+
+      function closeMetadataModal() {
+        elements.metadataModal.classList.remove("open");
+        elements.metadataModal.setAttribute("aria-hidden", "true");
+      }
+
+      async function onCoverImagePicked(event) {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = "";
+        if (!file || !isImageFile(file)) return;
+
+        const dataUrl = await readFileAsDataUrl(file);
+        const parts = parseDataUrl(dataUrl);
+        if (!parts) {
+          showToast("Could not read cover image.", "error");
+          return;
+        }
+
+        project.metadata.coverImage = {
+          filename: sanitizeFilename(file.name || `cover.${extensionFromMime(parts.mimeType)}`),
+          mimeType: parts.mimeType,
+          base64: parts.base64
+        };
+        onProjectMutated();
+        renderCoverLabel();
+        showToast("Cover image added.", "success");
+      }
+
+      function removeCoverImage() {
+        if (!project.metadata.coverImage) return;
+        project.metadata.coverImage = null;
+        onProjectMutated();
+        renderCoverLabel();
+      }
+
+      async function onToolbarImagePicked(event) {
+        const files = Array.from(event.target.files || []).filter(isImageFile);
+        event.target.value = "";
+        if (!files.length) return;
+        for (const file of files) {
+          await insertImageIntoCurrentEditor(file);
+        }
+        onProjectMutated();
+      }
+
+      async function insertImageIntoCurrentEditor(file) {
+        const chapter = getCurrentChapter();
+        if (!chapter) return;
+        const dataUrl = await readFileAsDataUrl(file);
+        const imageRecord = await registerImageFromDataUrl(dataUrl, file.name);
+        if (!imageRecord) return;
+
+        const normalizedDataUrl = `data:${imageRecord.mimeType};base64,${imageRecord.base64}`;
+        if (chapter.editorMode === "markdown") {
+          const textarea = elements.markdownEditor;
+          const start = textarea.selectionStart || 0;
+          const end = textarea.selectionEnd || start;
+          const snippet = `![${escapeMarkdownAlt(imageRecord.filename)}](images/${imageRecord.filename})`;
+          const before = textarea.value.slice(0, start);
+          const after = textarea.value.slice(end);
+          textarea.value = `${before}${snippet}${after}`;
+          textarea.selectionStart = textarea.selectionEnd = start + snippet.length;
+          chapter.contentMarkdown = textarea.value;
+        } else {
+          const selection = quill.getSelection(true);
+          const index = selection ? selection.index : quill.getLength();
+          quill.insertEmbed(index, "image", normalizedDataUrl, "user");
+          quill.setSelection(index + 1, 0, "silent");
+          chapter.contentHtml = quill.root.innerHTML;
+        }
+      }
+
+      function escapeMarkdownAlt(value) {
+        return String(value || "image").replace(/[\[\]]/g, "");
+      }
+
+      async function registerImageFromDataUrl(dataUrl, preferredName = "") {
+        const parsed = parseDataUrl(dataUrl);
+        if (!parsed || !parsed.mimeType.startsWith("image/")) return null;
+
+        const hash = await hashBase64(parsed.base64);
+        const existing = project.images.find(
+          (image) => image.hash === hash && image.mimeType === parsed.mimeType
+        );
+        if (existing) return existing;
+
+        const ext = extensionFromFilename(preferredName) || extensionFromMime(parsed.mimeType);
+        const filename = generateNextImageFilename(ext);
+        const record = {
+          id: filename.replace(/\.[^.]+$/, ""),
+          filename,
+          mimeType: parsed.mimeType,
+          base64: parsed.base64,
+          hash
+        };
+        project.images.push(record);
+        return record;
+      }
+
+      function generateNextImageFilename(extension) {
+        const cleanExtension = extension ? extension.replace(/^\./, "").toLowerCase() : "bin";
+        let max = 0;
+        project.images.forEach((image) => {
+          const match = /image-(\d+)\./i.exec(image.filename || "");
+          if (match) {
+            max = Math.max(max, Number(match[1]));
+          }
+        });
+        return `image-${String(max + 1).padStart(3, "0")}.${cleanExtension}`;
+      }
+
+      function isImageFile(file) {
+        return file && typeof file.type === "string" && file.type.startsWith("image/");
+      }
+
+      function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error("File reading failed"));
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function parseDataUrl(dataUrl) {
+        const match = /^data:([^;,]+);base64,([a-zA-Z0-9+/=]+)$/.exec(dataUrl || "");
+        if (!match) return null;
+        return {
+          mimeType: match[1].toLowerCase(),
+          base64: match[2]
+        };
+      }
+
+      async function normalizeMarkdownImageSources(markdown) {
+        const source = String(markdown || "");
+        const imagePattern = /!\[([^\]]*)\]\(([^)\n]+)\)/g;
+        let result = "";
+        let cursor = 0;
+        let changed = false;
+        let match;
+
+        while ((match = imagePattern.exec(source))) {
+          result += source.slice(cursor, match.index);
+          cursor = imagePattern.lastIndex;
+
+          const alt = match[1];
+          const target = match[2];
+          const parsed = splitMarkdownImageTarget(target);
+
+          if (!parsed.url) {
+            result += match[0];
+            continue;
+          }
+
+          let nextUrl = parsed.url;
+          const dataParts = parseDataUrl(nextUrl);
+          if (dataParts && dataParts.mimeType.startsWith("image/")) {
+            const record = await registerImageFromDataUrl(nextUrl, "image");
+            if (record) {
+              nextUrl = `images/${record.filename}`;
+              changed = true;
+            }
+          } else {
+            const normalizedPath = normalizeMarkdownImagePath(nextUrl);
+            if (normalizedPath && normalizedPath !== nextUrl) {
+              nextUrl = normalizedPath;
+              changed = true;
+            }
+          }
+
+          result += `![${alt}](${rebuildMarkdownImageTarget(parsed, nextUrl)})`;
+        }
+
+        result += source.slice(cursor);
+        return changed ? result : source;
+      }
+
+      function splitMarkdownImageTarget(target) {
+        const trimmed = String(target || "").trim();
+        if (!trimmed) {
+          return { url: "", suffix: "", angleWrapped: false };
+        }
+
+        if (trimmed.startsWith("<")) {
+          const closeIndex = trimmed.indexOf(">");
+          if (closeIndex > 0) {
+            return {
+              url: trimmed.slice(1, closeIndex).trim(),
+              suffix: trimmed.slice(closeIndex + 1),
+              angleWrapped: true
+            };
+          }
+        }
+
+        const whitespaceIndex = trimmed.search(/\s/);
+        if (whitespaceIndex === -1) {
+          return { url: trimmed, suffix: "", angleWrapped: false };
+        }
+
+        return {
+          url: trimmed.slice(0, whitespaceIndex),
+          suffix: trimmed.slice(whitespaceIndex),
+          angleWrapped: false
+        };
+      }
+
+      function rebuildMarkdownImageTarget(parsed, url) {
+        if (!parsed) return url;
+        const suffix = parsed.suffix || "";
+        return parsed.angleWrapped ? `<${url}>${suffix}` : `${url}${suffix}`;
+      }
+
+      function normalizeMarkdownImagePath(url) {
+        const filename = extractImageFilenameFromPath(url);
+        return filename ? `images/${filename}` : "";
+      }
+
+      function extractImageFilenameFromPath(input) {
+        const raw = String(input || "")
+          .trim()
+          .replace(/^<|>$/g, "");
+        if (!raw) return "";
+
+        const noQuery = raw.split(/[?#]/)[0];
+        if (/^data:/i.test(noQuery) || /^[a-z][a-z0-9+.-]*:/i.test(noQuery)) {
+          return "";
+        }
+
+        const normalized = noQuery.replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+        const match = /(?:^|\/)images\/([^/]+)$/i.exec(normalized);
+        if (!match || !match[1]) return "";
+
+        const decoded = safeDecodeURIComponent(match[1]);
+        return sanitizeFilename(decoded);
+      }
+
+      function safeDecodeURIComponent(value) {
+        try {
+          return decodeURIComponent(value);
+        } catch (_error) {
+          return value;
+        }
+      }
+
+      async function hashBase64(base64) {
+        const bytes = base64ToUint8Array(base64);
+        if (!window.crypto || !window.crypto.subtle) {
+          return `${bytes.length}-${base64.slice(0, 24)}`;
+        }
+        const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+        return Array.from(new Uint8Array(digest))
+          .map((value) => value.toString(16).padStart(2, "0"))
+          .join("");
+      }
+
+      function base64ToUint8Array(base64) {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+      }
+
+      function uint8ArrayToBase64(uint8Array) {
+        let binary = "";
+        for (let i = 0; i < uint8Array.length; i += 1) {
+          binary += String.fromCharCode(uint8Array[i]);
+        }
+        return btoa(binary);
+      }
+
+      function clearValidationErrors() {
+        elements.validationErrors.classList.remove("active");
+        elements.validationErrors.innerHTML = "";
+      }
+
+      function renderValidationErrors(errors) {
+        if (!errors.length) {
+          clearValidationErrors();
+          return;
+        }
+        elements.validationErrors.classList.add("active");
+        elements.validationErrors.innerHTML = errors.map((error) => `<div>- ${escapeHtml(error)}</div>`).join("");
+      }
+
+      async function exportEpub() {
+        persistCurrentChapterContent();
+        try {
+          await normalizeCurrentMarkdownForExplicitAction();
+          clearValidationErrors();
+
+          const validation = validateBeforeExport();
+          if (validation.errors.length) {
+            renderValidationErrors(validation.errors);
+            showToast("Fix validation errors before export.", "error");
+            return;
+          }
+          if (validation.warnings.length) {
+            showToast(validation.warnings[0], "error");
+          }
+
+          const ordered = getOrderedChapters();
+          const compiled = await compileChaptersForExport(ordered);
+          const usedImages = compiled.usedImages;
+          const chapterFiles = compiled.chapters;
+          const coverFile = buildCoverExportFile();
+          const title = project.metadata.title.trim();
+          const author = project.metadata.author.trim();
+          const language = (project.metadata.language || "en").trim() || "en";
+          const uuid = project.uuid || generateUuid();
+          project.uuid = uuid;
+
+          const tocXhtml = buildTocXhtml(chapterFiles);
+          const tocNcx = buildTocNcx(chapterFiles, title, uuid);
+          const contentOpf = buildContentOpf({
+            title,
+            author,
+            language,
+            uuid,
+            chapters: chapterFiles,
+            images: Array.from(usedImages.values()),
+            coverFile
+          });
+
+          const zip = new window.JSZip();
+          zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+          zip.folder("META-INF").file("container.xml", CONTAINER_XML);
+
+          const oebps = zip.folder("OEBPS");
+          oebps.file("styles.css", EPUB_STYLE_CSS);
+          oebps.file("toc.xhtml", tocXhtml);
+          oebps.file("toc.ncx", tocNcx);
+          oebps.file("content.opf", contentOpf);
+
+          const chapterFolder = oebps.folder("chapters");
+          chapterFiles.forEach((chapter) => {
+            chapterFolder.file(chapter.filename, chapter.xhtml);
+          });
+
+          const imageFolder = oebps.folder("images");
+          Array.from(usedImages.values()).forEach((image) => {
+            imageFolder.file(image.filename, base64ToUint8Array(image.base64));
+          });
+
+          if (coverFile) {
+            imageFolder.file(coverFile.filename, base64ToUint8Array(coverFile.base64));
+          }
+
+          const blob = await zip.generateAsync({
+            type: "blob",
+            compression: "DEFLATE"
+          });
+
+          const downloadName = `${slugifyFilename(title) || "book"}.epub`;
+          window.saveAs(blob, downloadName);
+          showToast("EPUB exported successfully.", "success");
+          onProjectMutated();
+        } catch (error) {
+          console.error(error);
+          showToast("Export failed: " + error.message, "error");
+        }
+      }
+
+      function validateBeforeExport() {
+        const errors = [];
+        const warnings = [];
+
+        if (!project.metadata.title.trim()) {
+          errors.push("Title is required.");
+        }
+        if (!project.metadata.author.trim()) {
+          errors.push("Author is required.");
+        }
+        if (!project.chapters.length) {
+          errors.push("At least one chapter is required.");
+        }
+
+        const hasAnyContent = getOrderedChapters().some((chapter) => {
+          const text =
+            chapter.editorMode === "markdown"
+              ? chapter.contentMarkdown
+              : extractTextFromHtml(chapter.contentHtml);
+          return String(text || "").trim().length > 0;
+        });
+        if (!hasAnyContent) {
+          warnings.push("All chapters are empty. Empty chapter pages will still be exported.");
+        }
+
+        const estimatedSize = estimateProjectSizeBytes();
+        if (estimatedSize > MAX_WARN_BYTES) {
+          warnings.push("Project size exceeds ~50MB. Some e-readers may struggle.");
+        }
+
+        return { errors, warnings };
+      }
+
+      function estimateProjectSizeBytes() {
+        let total = 0;
+        getOrderedChapters().forEach((chapter) => {
+          total += (chapter.contentHtml || "").length;
+          total += (chapter.contentMarkdown || "").length;
+          total += (chapter.title || "").length;
+        });
+
+        project.images.forEach((image) => {
+          total += base64SizeInBytes(image.base64);
+          total += (image.filename || "").length;
+        });
+
+        if (project.metadata.coverImage) {
+          total += base64SizeInBytes(project.metadata.coverImage.base64);
+          total += project.metadata.coverImage.filename.length;
+        }
+        return total;
+      }
+
+      function base64SizeInBytes(base64) {
+        if (!base64) return 0;
+        const padding = (base64.match(/=+$/) || [""])[0].length;
+        return Math.floor((base64.length * 3) / 4) - padding;
+      }
+
+      async function compileChaptersForExport(chapters) {
+        const chapterFiles = [];
+        const usedImages = new Map();
+
+        for (let i = 0; i < chapters.length; i += 1) {
+          const chapter = chapters[i];
+          const serial = String(i + 1).padStart(3, "0");
+          const id = `chapter-${serial}`;
+          const filename = `chapter-${serial}.xhtml`;
+          const title = chapter.title || `Chapter ${i + 1}`;
+
+          let sourceHtml = chapter.contentHtml || "";
+          if (chapter.editorMode === "markdown") {
+            const normalizedMarkdown = await normalizeMarkdownImageSources(chapter.contentMarkdown || "");
+            chapter.contentMarkdown = normalizedMarkdown;
+            sourceHtml = window.marked.parse(normalizedMarkdown);
+          }
+
+          const xhtmlContent = await sanitizeAndEmbedImages(sourceHtml, usedImages);
+          const xhtml = buildChapterXhtml(title, xhtmlContent);
+          chapterFiles.push({
+            id,
+            filename,
+            href: `chapters/${filename}`,
+            title,
+            xhtml
+          });
+        }
+
+        return { chapters: chapterFiles, usedImages };
+      }
+
+      async function sanitizeAndEmbedImages(html, usedImages) {
+        const sanitized = sanitizeHtml(html);
+        const doc = new DOMParser().parseFromString(`<div id="root">${sanitized}</div>`, "text/html");
+        const root = doc.getElementById("root");
+        const images = Array.from(root.querySelectorAll("img"));
+
+        for (const image of images) {
+          const src = image.getAttribute("src") || "";
+          if (!src) {
+            image.remove();
+            continue;
+          }
+
+          if (src.startsWith("data:image/")) {
+            const record = await registerImageFromDataUrl(src, "image");
+            if (!record) {
+              image.remove();
+              continue;
+            }
+            usedImages.set(record.filename, record);
+            image.setAttribute("src", `../images/${record.filename}`);
+          } else if (
+            src.startsWith("../images/") ||
+            src.startsWith("./images/") ||
+            src.startsWith("images/")
+          ) {
+            const filename = extractImageFilenameFromPath(src);
+            if (!filename) {
+              image.remove();
+              continue;
+            }
+            const found = project.images.find((entry) => entry.filename === filename);
+            if (!found) {
+              image.remove();
+              continue;
+            }
+            usedImages.set(found.filename, found);
+            image.setAttribute("src", `../images/${found.filename}`);
+          } else {
+            image.remove();
+          }
+
+          if (!image.hasAttribute("alt")) {
+            image.setAttribute("alt", "");
+          }
+        }
+
+        const cleanAgain = sanitizeHtml(root.innerHTML);
+        return htmlToXhtmlFragment(cleanAgain);
+      }
+
+      function sanitizeHtml(inputHtml) {
+        const doc = new DOMParser().parseFromString(`<div id="root">${inputHtml || ""}</div>`, "text/html");
+        const root = doc.getElementById("root");
+        if (!root) return "";
+
+        sanitizeNode(root);
+        normalizeFormattingTags(root);
+        return root.innerHTML;
+      }
+
+      function sanitizeNode(node) {
+        const children = Array.from(node.childNodes);
+        children.forEach((child) => {
+          if (child.nodeType === Node.ELEMENT_NODE) {
+            const element = child;
+            const tag = element.tagName.toLowerCase();
+
+            if (DISALLOWED_TAGS.has(tag)) {
+              element.remove();
+              return;
+            }
+
+            if (!ALLOWED_TAGS.has(tag)) {
+              while (element.firstChild) {
+                node.insertBefore(element.firstChild, element);
+              }
+              element.remove();
+              return;
+            }
+
+            scrubAttributes(element);
+            sanitizeNode(element);
+          } else if (child.nodeType === Node.COMMENT_NODE) {
+            child.remove();
+          }
+        });
+      }
+
+      function scrubAttributes(element) {
+        const tag = element.tagName.toLowerCase();
+        const allowed = {
+          a: new Set(["href", "title"]),
+          img: new Set(["src", "alt", "title"]),
+          p: new Set([]),
+          div: new Set([]),
+          span: new Set([]),
+          strong: new Set([]),
+          b: new Set([]),
+          em: new Set([]),
+          i: new Set([]),
+          u: new Set([]),
+          s: new Set([]),
+          h1: new Set([]),
+          h2: new Set([]),
+          h3: new Set([]),
+          ol: new Set([]),
+          ul: new Set([]),
+          li: new Set([]),
+          blockquote: new Set([]),
+          pre: new Set([]),
+          code: new Set([]),
+          br: new Set([]),
+          hr: new Set([])
+        };
+
+        Array.from(element.attributes).forEach((attribute) => {
+          const name = attribute.name.toLowerCase();
+          const value = attribute.value || "";
+
+          if (
+            name.startsWith("on") ||
+            name === "style" ||
+            name === "class" ||
+            name === "id" ||
+            name.startsWith("data-") ||
+            name === "contenteditable" ||
+            name === "spellcheck"
+          ) {
+            element.removeAttribute(attribute.name);
+            return;
+          }
+
+          const allowedForTag = allowed[tag] || new Set();
+          if (!allowedForTag.has(name)) {
+            element.removeAttribute(attribute.name);
+            return;
+          }
+
+          if (name === "href" && !isSafeHref(value)) {
+            element.removeAttribute("href");
+            return;
+          }
+
+          if (name === "src" && !isSafeImageSrc(value)) {
+            element.removeAttribute("src");
+          }
+        });
+      }
+
+      function normalizeFormattingTags(root) {
+        convertTag(root, "b", "strong");
+        convertTag(root, "i", "em");
+        convertTag(root, "strike", "s");
+      }
+
+      function convertTag(root, fromTag, toTag) {
+        const matches = Array.from(root.querySelectorAll(fromTag));
+        matches.forEach((element) => {
+          const replacement = document.createElement(toTag);
+          while (element.firstChild) {
+            replacement.appendChild(element.firstChild);
+          }
+          element.replaceWith(replacement);
+        });
+      }
+
+      function isSafeHref(href) {
+        if (!href) return false;
+        const value = href.trim().toLowerCase();
+        if (value.startsWith("javascript:")) return false;
+        return (
+          value.startsWith("http://") ||
+          value.startsWith("https://") ||
+          value.startsWith("mailto:") ||
+          value.startsWith("#") ||
+          value.startsWith("./") ||
+          value.startsWith("../")
+        );
+      }
+
+      function isSafeImageSrc(src) {
+        if (!src) return false;
+        const value = src.trim().toLowerCase();
+        if (value.startsWith("javascript:")) return false;
+        return (
+          value.startsWith("data:image/") ||
+          value.startsWith("../images/") ||
+          value.startsWith("./images/") ||
+          value.startsWith("images/")
+        );
+      }
+
+      function hydrateHtmlImageRefsForDisplay(html) {
+        const doc = new DOMParser().parseFromString(`<div id="root">${html || ""}</div>`, "text/html");
+        const root = doc.getElementById("root");
+        if (!root) return "";
+
+        const images = Array.from(root.querySelectorAll("img"));
+        images.forEach((image) => {
+          const src = image.getAttribute("src") || "";
+          if (!src) {
+            image.remove();
+            return;
+          }
+          if (src.startsWith("data:image/")) {
+            return;
+          }
+
+          const filename = extractImageFilenameFromPath(src);
+          if (!filename) {
+            image.remove();
+            return;
+          }
+
+          const record = project.images.find((entry) => entry.filename === filename);
+          if (!record) {
+            image.remove();
+            return;
+          }
+
+          image.setAttribute("src", `data:${record.mimeType};base64,${record.base64}`);
+        });
+
+        return root.innerHTML;
+      }
+
+      function htmlToXhtmlFragment(html) {
+        return String(html || "")
+          .replace(/&nbsp;/g, "&#160;")
+          .replace(/<(img|br|hr)([^>]*)>/gi, (full, tag, attrs) => {
+            const trimmed = String(attrs || "").trim();
+            if (trimmed.endsWith("/")) return `<${tag}${attrs}>`;
+            return `<${tag}${attrs} />`;
+          });
+      }
+
+      function convertHtmlToMarkdown(html) {
+        const safeHtml = sanitizeHtml(html || "");
+        const doc = new DOMParser().parseFromString(`<div id="root">${safeHtml}</div>`, "text/html");
+        const root = doc.getElementById("root");
+        if (!root) return "";
+
+        const markdown = Array.from(root.childNodes).map((node) => nodeToMarkdown(node, 0)).join("");
+        return normalizeMarkdown(markdown);
+      }
+
+      function nodeToMarkdown(node, listDepth) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          return collapseWhitespace(node.textContent || "");
+        }
+
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+          return "";
+        }
+
+        const element = node;
+        const tag = element.tagName.toLowerCase();
+
+        switch (tag) {
+          case "br":
+            return "  \n";
+          case "hr":
+            return "\n---\n\n";
+          case "strong":
+          case "b":
+            return `**${inlineMarkdown(element)}**`;
+          case "em":
+          case "i":
+            return `*${inlineMarkdown(element)}*`;
+          case "u":
+            return `<u>${inlineMarkdown(element)}</u>`;
+          case "s":
+            return `~~${inlineMarkdown(element)}~~`;
+          case "a": {
+            const href = (element.getAttribute("href") || "").trim();
+            const label = inlineMarkdown(element) || href;
+            return href ? `[${escapeMarkdown(label)}](${href})` : escapeMarkdown(label);
+          }
+          case "img": {
+            const alt = escapeMarkdown(element.getAttribute("alt") || "");
+            const src = (element.getAttribute("src") || "").trim();
+            return src ? `![${alt}](${src})` : "";
+          }
+          case "code":
+            if (element.parentElement && element.parentElement.tagName.toLowerCase() === "pre") {
+              return element.textContent || "";
+            }
+            return `\`${String(element.textContent || "").replace(/`/g, "\\`")}\``;
+          case "pre": {
+            const codeNode = element.querySelector("code");
+            const codeText = String(codeNode ? codeNode.textContent : element.textContent || "").replace(/\n+$/, "");
+            return `\n\`\`\`\n${codeText}\n\`\`\`\n\n`;
+          }
+          case "blockquote": {
+            const inner = normalizeMarkdown(markdownFromChildren(element, listDepth));
+            if (!inner) return "\n";
+            const quoted = inner
+              .split("\n")
+              .map((line) => (line ? `> ${line}` : ">"))
+              .join("\n");
+            return `${quoted}\n\n`;
+          }
+          case "h1":
+          case "h2":
+          case "h3": {
+            const level = Number(tag[1]);
+            const heading = inlineMarkdown(element);
+            return `${"#".repeat(level)} ${heading}\n\n`;
+          }
+          case "ol":
+            return listToMarkdown(element, true, listDepth);
+          case "ul":
+            return listToMarkdown(element, false, listDepth);
+          case "li":
+            return listItemToMarkdown(element, false, 0, listDepth);
+          case "p": {
+            const paragraph = normalizeInlineMarkdown(markdownFromChildren(element, listDepth));
+            return paragraph ? `${paragraph}\n\n` : "\n";
+          }
+          case "div": {
+            const block = normalizeMarkdown(markdownFromChildren(element, listDepth));
+            return block ? `${block}\n\n` : "";
+          }
+          case "span":
+            return markdownFromChildren(element, listDepth);
+          default:
+            return markdownFromChildren(element, listDepth);
+        }
+      }
+
+      function listToMarkdown(listElement, ordered, depth) {
+        const items = Array.from(listElement.children).filter((child) => {
+          return child.tagName && child.tagName.toLowerCase() === "li";
+        });
+        if (!items.length) return "";
+
+        const lines = items.map((item, index) => listItemToMarkdown(item, ordered, index, depth));
+        return `${lines.join("")}\n`;
+      }
+
+      function listItemToMarkdown(item, ordered, index, depth) {
+        const indent = "  ".repeat(depth);
+        const marker = ordered ? `${index + 1}. ` : "- ";
+        const childNodes = Array.from(item.childNodes);
+        const nestedLists = [];
+        const contentNodes = [];
+
+        childNodes.forEach((child) => {
+          if (child.nodeType === Node.ELEMENT_NODE) {
+            const tag = child.tagName.toLowerCase();
+            if (tag === "ul" || tag === "ol") {
+              nestedLists.push(child);
+              return;
+            }
+          }
+          contentNodes.push(child);
+        });
+
+        const text = normalizeInlineMarkdown(contentNodes.map((node) => nodeToMarkdown(node, depth)).join(""));
+        let output = `${indent}${marker}${text}\n`;
+        nestedLists.forEach((list) => {
+          output += listToMarkdown(list, list.tagName.toLowerCase() === "ol", depth + 1);
+        });
+        return output;
+      }
+
+      function markdownFromChildren(element, depth) {
+        return Array.from(element.childNodes).map((child) => nodeToMarkdown(child, depth)).join("");
+      }
+
+      function inlineMarkdown(element) {
+        return normalizeInlineMarkdown(markdownFromChildren(element, 0));
+      }
+
+      function normalizeInlineMarkdown(value) {
+        return String(value || "")
+          .replace(/\s*\n+\s*/g, " ")
+          .replace(/\s{2,}/g, " ")
+          .trim();
+      }
+
+      function collapseWhitespace(value) {
+        return String(value || "").replace(/\s+/g, " ");
+      }
+
+      function normalizeMarkdown(value) {
+        return String(value || "")
+          .replace(/\u00a0/g, " ")
+          .replace(/[ \t]+\n/g, "\n")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+      }
+
+      function escapeMarkdown(value) {
+        return String(value || "").replace(/([\\`*_{}[\]()#+\-.!<>|])/g, "\\$1");
+      }
+
+      function buildChapterXhtml(title, bodyContent) {
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>${escapeXml(title)}</title>
+  <link rel="stylesheet" type="text/css" href="../styles.css"/>
+</head>
+<body>
+  <h1>${escapeXml(title)}</h1>
+  ${bodyContent || ""}
+</body>
+</html>`;
+      }
+
+      function buildTocXhtml(chapterFiles) {
+        const items = chapterFiles
+          .map((chapter) => `      <li><a href="${chapter.href}">${escapeXml(chapter.title)}</a></li>`)
+          .join("\n");
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head><title>Table of Contents</title></head>
+<body>
+  <nav epub:type="toc">
+    <h1>Table of Contents</h1>
+    <ol>
+${items}
+    </ol>
+  </nav>
+</body>
+</html>`;
+      }
+
+      function buildTocNcx(chapterFiles, title, uuid) {
+        const navPoints = chapterFiles
+          .map(
+            (chapter, index) => `    <navPoint id="${chapter.id}" playOrder="${index + 1}">
+      <navLabel><text>${escapeXml(chapter.title)}</text></navLabel>
+      <content src="${chapter.href}"/>
+    </navPoint>`
+          )
+          .join("\n");
+
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="urn:uuid:${escapeXml(uuid)}"/>
+  </head>
+  <docTitle><text>${escapeXml(title)}</text></docTitle>
+  <navMap>
+${navPoints}
+  </navMap>
+</ncx>`;
+      }
+
+      function buildContentOpf(params) {
+        const metadata = project.metadata;
+        const nowIso = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+        const optionalMetadata = [];
+        if (metadata.description.trim()) optionalMetadata.push(`    <dc:description>${escapeXml(metadata.description)}</dc:description>`);
+        if (metadata.publisher.trim()) optionalMetadata.push(`    <dc:publisher>${escapeXml(metadata.publisher)}</dc:publisher>`);
+        if (metadata.rights.trim()) optionalMetadata.push(`    <dc:rights>${escapeXml(metadata.rights)}</dc:rights>`);
+        if (metadata.date.trim()) optionalMetadata.push(`    <dc:date>${escapeXml(metadata.date)}</dc:date>`);
+
+        const manifestItems = [
+          `    <item id="nav" href="toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>`,
+          `    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`,
+          `    <item id="css" href="styles.css" media-type="text/css"/>`
+        ];
+
+        params.chapters.forEach((chapter) => {
+          manifestItems.push(
+            `    <item id="${chapter.id}" href="${chapter.href}" media-type="application/xhtml+xml"/>`
+          );
+        });
+
+        params.images.forEach((image, index) => {
+          manifestItems.push(
+            `    <item id="img-${String(index + 1).padStart(3, "0")}" href="images/${image.filename}" media-type="${escapeXml(image.mimeType)}"/>`
+          );
+        });
+
+        const metadataExtras = [...optionalMetadata];
+        if (params.coverFile) {
+          manifestItems.push(
+            `    <item id="cover-image" href="images/${params.coverFile.filename}" media-type="${escapeXml(params.coverFile.mimeType)}" properties="cover-image"/>`
+          );
+          metadataExtras.push(`    <meta name="cover" content="cover-image"/>`);
+        }
+
+        const spineItems = params.chapters
+          .map((chapter) => `    <itemref idref="${chapter.id}"/>`)
+          .join("\n");
+
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="bookid">urn:uuid:${escapeXml(params.uuid)}</dc:identifier>
+    <dc:title>${escapeXml(params.title)}</dc:title>
+    <dc:creator>${escapeXml(params.author)}</dc:creator>
+    <dc:language>${escapeXml(params.language)}</dc:language>
+    <meta property="dcterms:modified">${nowIso}</meta>
+${metadataExtras.join("\n")}
+  </metadata>
+  <manifest>
+${manifestItems.join("\n")}
+  </manifest>
+  <spine toc="ncx">
+${spineItems}
+  </spine>
+</package>`;
+      }
+
+      function buildCoverExportFile() {
+        const cover = project.metadata.coverImage;
+        if (!cover) return null;
+        const extension = extensionFromMime(cover.mimeType) || extensionFromFilename(cover.filename) || "jpg";
+        return {
+          filename: `cover.${extension}`,
+          mimeType: cover.mimeType,
+          base64: cover.base64
+        };
+      }
+
+      async function importProjectJson(event) {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = "";
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const parsed = JSON.parse(text);
+          project = normalizeProject(parsed);
+          currentChapterId = project.chapters[0].id;
+          renderAll();
+          forceSaveNow();
+          showToast("Project JSON imported.", "success");
+        } catch (error) {
+          console.error(error);
+          showToast("Invalid project JSON.", "error");
+        }
+      }
+
+      function exportProjectJson() {
+        persistCurrentChapterContent();
+        const payload = JSON.stringify(project, null, 2);
+        const title = project.metadata.title.trim() || "epub-project";
+        const fileName = `${slugifyFilename(title)}.json`;
+        localStorage.setItem(BACKUP_NAME_KEY, fileName);
+        const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
+        window.saveAs(blob, fileName);
+        showToast("Project JSON exported.", "success");
+      }
+
+      async function importEpub(event) {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = "";
+        if (!file) return;
+        try {
+          const imported = await parseEpubFile(file);
+          project = imported;
+          currentChapterId = project.chapters[0].id;
+          renderAll();
+          forceSaveNow();
+          showToast("EPUB imported.", "success");
+        } catch (error) {
+          console.error(error);
+          showToast("EPUB import failed: " + error.message, "error");
+        }
+      }
+
+      async function parseEpubFile(file) {
+        const zip = await window.JSZip.loadAsync(file);
+        const mimetypeEntry = zip.file("mimetype");
+        if (!mimetypeEntry) {
+          throw new Error("Missing mimetype file.");
+        }
+        const mimetype = (await mimetypeEntry.async("string")).trim();
+        if (mimetype !== "application/epub+zip") {
+          throw new Error("Unsupported mimetype.");
+        }
+
+        const containerEntry = zip.file("META-INF/container.xml");
+        if (!containerEntry) {
+          throw new Error("Missing META-INF/container.xml.");
+        }
+        const containerXml = await containerEntry.async("string");
+        const containerDoc = parseXmlOrThrow(containerXml, "container.xml");
+        const rootfile = findFirstByLocalName(containerDoc, "rootfile");
+        if (!rootfile) throw new Error("container.xml missing rootfile.");
+
+        const opfPath = rootfile.getAttribute("full-path");
+        if (!opfPath) throw new Error("container.xml missing package path.");
+        const opfEntry = zip.file(normalizeZipPath(opfPath));
+        if (!opfEntry) throw new Error("Package file not found: " + opfPath);
+
+        const opfText = await opfEntry.async("string");
+        const opfDoc = parseXmlOrThrow(opfText, "content.opf");
+        const opfDir = dirnameZipPath(opfPath);
+
+        const metadataNode = findFirstByLocalName(opfDoc, "metadata");
+        const manifestNode = findFirstByLocalName(opfDoc, "manifest");
+        const spineNode = findFirstByLocalName(opfDoc, "spine");
+        if (!metadataNode || !manifestNode || !spineNode) {
+          throw new Error("OPF missing metadata/manifest/spine.");
+        }
+
+        const metadata = {
+          title: readChildText(metadataNode, "title"),
+          author: readChildText(metadataNode, "creator"),
+          language: readChildText(metadataNode, "language") || "en",
+          description: readChildText(metadataNode, "description"),
+          publisher: readChildText(metadataNode, "publisher"),
+          date: readChildText(metadataNode, "date"),
+          rights: readChildText(metadataNode, "rights"),
+          coverImage: null
+        };
+
+        const identifier = readChildText(metadataNode, "identifier");
+        const uuid = extractUuid(identifier) || generateUuid();
+
+        const manifestItems = Array.from(manifestNode.children)
+          .filter((node) => node.localName === "item")
+          .map((node) => {
+            const href = node.getAttribute("href") || "";
+            const mediaType = node.getAttribute("media-type") || "";
+            const id = node.getAttribute("id") || "";
+            const properties = node.getAttribute("properties") || "";
+            return {
+              id,
+              href,
+              mediaType,
+              properties,
+              fullPath: resolveZipPath(opfDir, href)
+            };
+          });
+
+        const manifestById = new Map(manifestItems.map((item) => [item.id, item]));
+        const imageItems = manifestItems.filter((item) => item.mediaType.startsWith("image/"));
+        const imagesByPath = new Map();
+        const importedImages = [];
+
+        for (const item of imageItems) {
+          const entry = zip.file(item.fullPath);
+          if (!entry) continue;
+          const base64 = await entry.async("base64");
+          const bytes = base64ToUint8Array(base64);
+          const hash = await hashBase64(base64);
+          const filename = ensureUniqueFilename(
+            sanitizeFilename(basenameZipPath(item.href) || `image.${extensionFromMime(item.mediaType)}`),
+            importedImages.map((image) => image.filename)
+          );
+          const imageRecord = {
+            id: filename.replace(/\.[^.]+$/, ""),
+            filename,
+            mimeType: item.mediaType,
+            base64: uint8ArrayToBase64(bytes),
+            hash
+          };
+          importedImages.push(imageRecord);
+          imagesByPath.set(normalizeZipPath(item.fullPath), imageRecord);
+
+          if (item.properties.includes("cover-image")) {
+            metadata.coverImage = {
+              filename,
+              mimeType: item.mediaType,
+              base64: imageRecord.base64
+            };
+          }
+        }
+
+        const spineRefs = Array.from(spineNode.children)
+          .filter((node) => node.localName === "itemref")
+          .map((node) => node.getAttribute("idref"))
+          .filter(Boolean);
+
+        const chapterItems = [];
+        spineRefs.forEach((idref, index) => {
+          const item = manifestById.get(idref);
+          if (!item || !item.href.toLowerCase().endsWith(".xhtml")) return;
+          chapterItems.push({ ...item, index });
+        });
+
+        if (!chapterItems.length) {
+          manifestItems
+            .filter((item) => item.mediaType === "application/xhtml+xml" && !item.properties.includes("nav"))
+            .forEach((item, index) => {
+              chapterItems.push({ ...item, index });
+            });
+        }
+
+        if (!chapterItems.length) {
+          throw new Error("No readable chapters in EPUB.");
+        }
+
+        const chapters = [];
+        for (let i = 0; i < chapterItems.length; i += 1) {
+          const item = chapterItems[i];
+          const entry = zip.file(item.fullPath);
+          if (!entry) continue;
+          const xhtml = await entry.async("string");
+          const chapterDoc = new DOMParser().parseFromString(xhtml, "text/html");
+          const titleFromHead =
+            (chapterDoc.querySelector("title") && chapterDoc.querySelector("title").textContent) || "";
+          const heading = chapterDoc.querySelector("h1");
+          const chapterTitle = (heading && heading.textContent) || titleFromHead || `Chapter ${i + 1}`;
+          const body = chapterDoc.body;
+          const chapterDir = dirnameZipPath(item.fullPath);
+
+          if (body) {
+            Array.from(body.querySelectorAll("img")).forEach((img) => {
+              const src = img.getAttribute("src") || "";
+              if (!src) return;
+              if (src.startsWith("data:image/")) return;
+              const resolved = resolveZipPath(chapterDir, src);
+              const found = imagesByPath.get(resolved);
+              if (found) {
+                img.setAttribute("src", `data:${found.mimeType};base64,${found.base64}`);
+              } else {
+                img.remove();
+              }
+            });
+          }
+
+          const bodyHtml = body ? body.innerHTML : "";
+          chapters.push({
+            id: `chapter-${String(i + 1).padStart(3, "0")}`,
+            title: chapterTitle.trim() || `Chapter ${i + 1}`,
+            contentHtml: sanitizeHtml(bodyHtml),
+            contentMarkdown: "",
+            editorMode: "richtext",
+            order: i
+          });
+        }
+
+        if (!chapters.length) {
+          chapters.push(createDefaultProject().chapters[0]);
+        }
+
+        return normalizeProject({
+          version: PROJECT_VERSION,
+          uuid,
+          metadata,
+          chapters,
+          images: importedImages
+        });
+      }
+
+      function parseXmlOrThrow(xmlText, label) {
+        const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+        const parserError = doc.getElementsByTagName("parsererror")[0];
+        if (parserError) {
+          throw new Error(`Invalid XML in ${label}.`);
+        }
+        return doc;
+      }
+
+      function findFirstByLocalName(root, localName) {
+        const all = root.getElementsByTagName("*");
+        for (let i = 0; i < all.length; i += 1) {
+          if (all[i].localName === localName) return all[i];
+        }
+        return null;
+      }
+
+      function readChildText(parent, localName) {
+        if (!parent) return "";
+        const children = parent.getElementsByTagName("*");
+        for (let i = 0; i < children.length; i += 1) {
+          const child = children[i];
+          if (child.localName === localName) {
+            return (child.textContent || "").trim();
+          }
+        }
+        return "";
+      }
+
+      function extractUuid(identifier) {
+        if (!identifier) return "";
+        const uuidMatch = /urn:uuid:([0-9a-fA-F-]{36})/.exec(identifier);
+        if (uuidMatch) return uuidMatch[1];
+        const rawMatch = /([0-9a-fA-F-]{36})/.exec(identifier);
+        return rawMatch ? rawMatch[1] : "";
+      }
+
+      function dirnameZipPath(path) {
+        const normalized = normalizeZipPath(path);
+        const index = normalized.lastIndexOf("/");
+        return index >= 0 ? normalized.slice(0, index + 1) : "";
+      }
+
+      function basenameZipPath(path) {
+        const normalized = normalizeZipPath(path);
+        const index = normalized.lastIndexOf("/");
+        return index >= 0 ? normalized.slice(index + 1) : normalized;
+      }
+
+      function normalizeZipPath(path) {
+        const value = String(path || "")
+          .replace(/\\/g, "/")
+          .split(/[?#]/)[0];
+        const parts = value.split("/");
+        const stack = [];
+        for (const part of parts) {
+          if (!part || part === ".") continue;
+          if (part === "..") {
+            stack.pop();
+          } else {
+            stack.push(part);
+          }
+        }
+        return stack.join("/");
+      }
+
+      function resolveZipPath(baseDir, relativePath) {
+        const relative = String(relativePath || "");
+        if (!relative) return normalizeZipPath(baseDir);
+        if (/^[a-z][a-z0-9+.-]*:/i.test(relative)) {
+          return normalizeZipPath(relative);
+        }
+        if (relative.startsWith("/")) {
+          return normalizeZipPath(relative.slice(1));
+        }
+        return normalizeZipPath(`${baseDir}${relative}`);
+      }
+
+      function createNewProject() {
+        const shouldReset = window.confirm("Start a new project and clear current content?");
+        if (!shouldReset) return;
+        project = createDefaultProject();
+        currentChapterId = project.chapters[0].id;
+        clearValidationErrors();
+        renderAll();
+        forceSaveNow();
+        showToast("New project created.", "success");
+      }
+
+      function toggleTheme() {
+        const isDark = document.body.classList.toggle("theme-dark");
+        localStorage.setItem(THEME_KEY, isDark ? "dark" : "light");
+        elements.themeToggleBtn.textContent = isDark ? "Light Mode" : "Dark Mode";
+      }
+
+      function applyStoredTheme() {
+        const theme = localStorage.getItem(THEME_KEY);
+        const isDark = theme === "dark";
+        document.body.classList.toggle("theme-dark", isDark);
+        elements.themeToggleBtn.textContent = isDark ? "Light Mode" : "Dark Mode";
+      }
+
+      function showToast(message, variant = "success") {
+        const toast = document.createElement("div");
+        toast.className = `toast ${variant}`;
+        toast.textContent = message;
+        elements.toastStack.appendChild(toast);
+        setTimeout(() => {
+          toast.remove();
+        }, 3500);
+      }
+
+      function escapeXml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&apos;");
+      }
+
+      function escapeHtml(value) {
+        return escapeXml(value);
+      }
+
+      function extensionFromFilename(filename) {
+        const match = /\.([a-zA-Z0-9]+)$/.exec(filename || "");
+        return match ? match[1].toLowerCase() : "";
+      }
+
+      function extensionFromMime(mimeType) {
+        const map = {
+          "image/jpeg": "jpg",
+          "image/jpg": "jpg",
+          "image/png": "png",
+          "image/gif": "gif",
+          "image/webp": "webp",
+          "image/svg+xml": "svg",
+          "image/bmp": "bmp"
+        };
+        return map[(mimeType || "").toLowerCase()] || "bin";
+      }
+
+      function sanitizeFilename(filename) {
+        const raw = String(filename || "file")
+          .trim()
+          .replace(/[\\/:*?"<>|]+/g, "-")
+          .replace(/\s+/g, "-");
+        return raw || "file";
+      }
+
+      function ensureUniqueFilename(filename, existing) {
+        const used = new Set(existing || []);
+        if (!used.has(filename)) return filename;
+
+        const extension = extensionFromFilename(filename);
+        const base = extension ? filename.slice(0, -(extension.length + 1)) : filename;
+        let index = 2;
+        let candidate = "";
+        do {
+          candidate = extension ? `${base}-${index}.${extension}` : `${base}-${index}`;
+          index += 1;
+        } while (used.has(candidate));
+        return candidate;
+      }
+
+      function slugifyFilename(value) {
+        return String(value || "book")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 80) || "book";
+      }
+
+      function generateUuid() {
+        if (window.crypto && typeof window.crypto.randomUUID === "function") {
+          return window.crypto.randomUUID();
+        }
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+          const random = Math.floor(Math.random() * 16);
+          const value = char === "x" ? random : (random & 0x3) | 0x8;
+          return value.toString(16);
+        });
+      }
+
+      function stringOrEmpty(value) {
+        return typeof value === "string" ? value : "";
+      }
+
+      function stringOrDefault(value, fallback) {
+        return typeof value === "string" && value.trim() ? value : fallback;
+      }
+    })();
+  </script>
+</body>
+</html>
